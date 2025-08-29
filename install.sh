@@ -66,7 +66,7 @@ check_dependencies() {
         print_error "Missing required dependencies: ${missing[*]}"
         echo
         echo "On macOS:"
-        echo "  brew install lsof"
+        echo "  (lsof is pre-installed)"
         echo
         echo "On Ubuntu/Debian:"
         echo "  sudo apt-get update && sudo apt-get install lsof gawk curl"
