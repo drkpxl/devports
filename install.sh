@@ -150,9 +150,10 @@ install_devports() {
         
         # Try to add to PATH automatically
         local shell_rc=""
-        if [[ -n "$ZSH_VERSION" ]]; then
+        # Detect shell from environment or process
+        if [[ "$SHELL" == */zsh ]] || [[ -n "$ZSH_VERSION" ]]; then
             shell_rc="$HOME/.zshrc"
-        elif [[ -n "$BASH_VERSION" ]]; then
+        elif [[ "$SHELL" == */bash ]] || [[ -n "$BASH_VERSION" ]]; then
             shell_rc="$HOME/.bashrc"
         fi
         
