@@ -2,7 +2,7 @@ class Devports < Formula
   desc "Interactive CLI tool for viewing and killing development server processes"
   homepage "https://github.com/drkpxl/devports"
   url "https://github.com/drkpxl/devports/archive/v1.0.0.tar.gz"
-  sha256 "" # This will be filled in when you create the release
+  sha256 "57240fc045e83bb6df823f81a5e5d05db77183de3b149d2a5521cdefa03c5aaa"
   license "MIT"
 
   def install
