@@ -93,6 +93,7 @@ download_file() {
 
 install_devports() {
     local install_dir="$1"
+    local force_install="${2:-false}"
     local install_path="$install_dir/$PROGRAM_NAME"
     local temp_file
     temp_file="$(mktemp)"
@@ -120,7 +121,7 @@ install_devports() {
     fi
     
     # Install
-    if [[ -f "$install_path" && "$FORCE" != "true" ]]; then
+    if [[ -f "$install_path" && "$force_install" != "true" ]]; then
         print_warning "$PROGRAM_NAME already exists at $install_path"
         printf "Overwrite? [y/N] "
         read -r response </dev/tty
@@ -235,7 +236,7 @@ main() {
         fi
     fi
     
-    install_devports "$INSTALL_DIR"
+    install_devports "$INSTALL_DIR" "$FORCE"
 }
 
 # Only run main if script is executed directly
