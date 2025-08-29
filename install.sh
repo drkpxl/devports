@@ -167,11 +167,16 @@ install_devports() {
                 echo "export PATH=\"$install_dir:\$PATH\"" > "$shell_rc"
                 print_success "PATH configured! Restart your terminal to use $PROGRAM_NAME"
             else
-                echo "Cannot write to $shell_rc (permission denied)"
-                echo "Run this command to fix:"
-                echo "  sudo chown $USER:staff $shell_rc"
-                echo "Then rerun the installer, or add manually:"
-                echo "  export PATH=\"$install_dir:\$PATH\""
+                # Unwritable config file: create a personal config instead
+                local user_config="$HOME/.devports_env"
+                echo "Cannot write to $shell_rc, creating personal config instead..."
+                echo "export PATH=\"$install_dir:\$PATH\"" > "$user_config"
+                echo
+                echo "Add this line to your $shell_rc (when convenient):"
+                echo "  source $user_config"
+                echo
+                echo "Or run devports with full path for now:"
+                echo "  $install_path"
             fi
             echo
             print_success "Then run: $PROGRAM_NAME --help"
@@ -216,10 +221,18 @@ uninstall_devports() {
 }
 
 main() {
-    # Default to /usr/local/bin if writable, otherwise ~/.local/bin
-    local INSTALL_DIR="$HOME/.local/bin"
+    # Try multiple safe installation directories in order of preference
+    local INSTALL_DIR=""
+    
+    # 1. Check if user has /usr/local/bin writable (Homebrew creates this)
     if [[ -w "/usr/local/bin" ]]; then
         INSTALL_DIR="/usr/local/bin"
+    # 2. Check if ~/.local/bin is already in PATH
+    elif [[ ":$PATH:" == *":$HOME/.local/bin:"* ]]; then
+        INSTALL_DIR="$HOME/.local/bin"
+    # 3. Default to ~/.local/bin (will handle PATH setup)
+    else
+        INSTALL_DIR="$HOME/.local/bin"
     fi
     
     local SYSTEM_INSTALL=false
