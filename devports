@@ -3,14 +3,216 @@
 # devports - Interactive CLI tool for viewing and killing development server processes
 # 
 # Author: Steven Hubert
-# Version: 1.0.0
+# Version: 1.2.0
 # Repository: https://github.com/drkpxl/devports
 #
 
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 PROGRAM_NAME="devports"
+
+# Colors and formatting
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[0;33m'
+readonly BLUE='\033[0;34m'
+readonly PURPLE='\033[0;35m'
+readonly CYAN='\033[0;36m'
+readonly WHITE='\033[0;37m'
+readonly BOLD='\033[1m'
+readonly DIM='\033[2m'
+readonly RESET='\033[0m'
+
+# Configuration
+readonly SHOW_EXTENDED_INFO=${DEVPORTS_EXTENDED:-true}
+readonly SORT_BY=${DEVPORTS_SORT:-port}
+readonly REFRESH_INTERVAL=${DEVPORTS_REFRESH:-3}
+
+# Helper functions
+get_process_stats() {
+    local pid="$1"
+    local cpu memory uptime
+    
+    # Get process stats using ps (macOS/Linux compatible)
+    local stats
+    if stats=$(ps -p "$pid" -o %cpu,%mem,etime 2>/dev/null); then
+        local data
+        data=$(echo "$stats" | tail -n 1 | tr -s ' ')
+        cpu=$(echo "$data" | cut -d' ' -f2)
+        memory=$(echo "$data" | cut -d' ' -f3)
+        local raw_uptime=$(echo "$data" | cut -d' ' -f4-)
+        
+        # Format values
+        cpu=$(printf "%.1f%%" "${cpu:-0}")
+        memory=$(printf "%.1f%%" "${memory:-0}")
+        
+        # Format uptime to be more readable
+        uptime=$(format_uptime "$raw_uptime")
+    else
+        cpu="-"
+        memory="-"
+        uptime="-"
+    fi
+    
+    echo "$cpu,$memory,$uptime"
+}
+
+format_uptime() {
+    local raw_uptime="$1"
+    
+    # Handle different uptime formats from ps
+    if [[ "$raw_uptime" == "-" ]] || [[ -z "$raw_uptime" ]]; then
+        echo "-"
+        return
+    fi
+    
+    # Parse different time formats
+    if [[ "$raw_uptime" =~ ^([0-9]+)-([0-9]{2}):([0-9]{2}):([0-9]{2})$ ]]; then
+        # Format: DD-HH:MM:SS (days-hours:minutes:seconds)
+        local days="${BASH_REMATCH[1]}"
+        local hours="${BASH_REMATCH[2]#0}"  # Remove leading zero
+        local minutes="${BASH_REMATCH[3]#0}"
+        
+        if [[ $days -gt 0 ]]; then
+            echo "${days}d ${hours}h ${minutes}m"
+        elif [[ $hours -gt 0 ]]; then
+            echo "${hours}h ${minutes}m"
+        else
+            echo "${minutes}m"
+        fi
+    elif [[ "$raw_uptime" =~ ^([0-9]{2}):([0-9]{2}):([0-9]{2})$ ]]; then
+        # Format: HH:MM:SS (hours:minutes:seconds)
+        local hours="${BASH_REMATCH[1]#0}"
+        local minutes="${BASH_REMATCH[2]#0}"
+        
+        if [[ $hours -gt 0 ]]; then
+            echo "${hours}h ${minutes}m"
+        else
+            echo "${minutes}m"
+        fi
+    elif [[ "$raw_uptime" =~ ^([0-9]{2}):([0-9]{2})$ ]]; then
+        # Format: MM:SS (minutes:seconds)
+        local minutes="${BASH_REMATCH[1]#0}"
+        echo "${minutes}m"
+    else
+        # Fallback - return as-is if we can't parse it
+        echo "$raw_uptime"
+    fi
+}
+
+parse_selection() {
+    local input="$1"
+    local -a result=()
+    
+    # Split by comma first
+    IFS=',' read -ra PARTS <<< "$input"
+    
+    for part in "${PARTS[@]}"; do
+        part="${part// /}"  # Remove spaces
+        
+        if [[ "$part" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            # Range notation: 2-4
+            local start="${BASH_REMATCH[1]}"
+            local end="${BASH_REMATCH[2]}"
+            for ((i=start; i<=end; i++)); do
+                result+=("$i")
+            done
+        else
+            # Single item (index, PID, or port)
+            result+=("$part")
+        fi
+    done
+    
+    # Remove duplicates and return (trim trailing space)
+    local output
+    output=$(printf '%s\n' "${result[@]}" | sort -u | tr '\n' ' ')
+    echo "${output% }"  # Remove trailing space
+}
+
+get_port_from_address() {
+    local addr="$1"
+    if [[ "$addr" == *:* ]]; then
+        echo "${addr##*:}"
+    else
+        echo "-"
+    fi
+}
+
+format_process_name() {
+    local name="$1"
+    case "$name" in
+        node) echo -e "${GREEN}$name${RESET}" ;;
+        python*) echo -e "${BLUE}$name${RESET}" ;;
+        ruby|rails) echo -e "${RED}$name${RESET}" ;;
+        java|gradle|mvn) echo -e "${PURPLE}$name${RESET}" ;;
+        go|deno|bun) echo -e "${CYAN}$name${RESET}" ;;
+        php) echo -e "${PURPLE}$name${RESET}" ;;
+        *) echo -e "${WHITE}$name${RESET}" ;;
+    esac
+}
+
+format_port() {
+    local port="$1"
+    if [[ "$port" =~ ^[0-9]+$ ]]; then
+        if (( port >= 3000 && port <= 3999 )); then
+            echo -e "${GREEN}$port${RESET}"
+        elif (( port >= 8000 && port <= 8999 )); then
+            echo -e "${BLUE}$port${RESET}"
+        elif (( port >= 4000 && port <= 4999 )); then
+            echo -e "${YELLOW}$port${RESET}"
+        else
+            echo -e "${WHITE}$port${RESET}"
+        fi
+    else
+        echo -e "${DIM}$port${RESET}"
+    fi
+}
+
+print_header() {
+    echo -e "${BOLD}${CYAN}🚀 $PROGRAM_NAME v$VERSION${RESET} ${DIM}- Development Server Manager${RESET}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${RESET}"
+    echo
+}
+
+print_table_header() {
+    if [[ "$SHOW_EXTENDED_INFO" == "true" ]]; then
+        printf "${BOLD}%3s  %-15s %-8s %-6s %-18s %-8s %-8s %-10s${RESET}\n" \
+            "#" "PROCESS" "PID" "PORT" "ADDRESS" "CPU%" "MEM%" "UPTIME"
+        echo -e "${DIM}─────────────────────────────────────────────────────────────────────────────────${RESET}"
+    else
+        printf "${BOLD}%3s  %-15s %-8s %-6s %-18s${RESET}\n" \
+            "#" "PROCESS" "PID" "PORT" "ADDRESS"
+        echo -e "${DIM}───────────────────────────────────────────────────────────────${RESET}"
+    fi
+}
+
+print_table_row() {
+    local index="$1" name="$2" pid="$3" address="$4" stats="$5"
+    local port cpu memory uptime
+    
+    port=$(get_port_from_address "$address")
+    
+    if [[ "$SHOW_EXTENDED_INFO" == "true" ]]; then
+        IFS=',' read -r cpu memory uptime <<< "$stats"
+        printf "%3s  %-24s %-8s %-12s %-18s %-8s %-8s %-10s\n" \
+            "$index" \
+            "$(format_process_name "$name")" \
+            "$pid" \
+            "$(format_port "$port")" \
+            "$address" \
+            "$cpu" \
+            "$memory" \
+            "$uptime"
+    else
+        printf "%3s  %-24s %-8s %-12s %-18s\n" \
+            "$index" \
+            "$(format_process_name "$name")" \
+            "$pid" \
+            "$(format_port "$port")" \
+            "$address"
+    fi
+}
 
 show_help() {
     cat << EOF
@@ -43,15 +245,32 @@ EXAMPLES:
 
 INTERACTIVE COMMANDS:
     [Enter]    Exit the program
-    k          Kill selected processes (SIGTERM)
-    K          Force kill selected processes (SIGKILL)
+    1-9        Kill processes directly by number (SIGTERM)
+    1,3,5      Kill multiple processes (SIGTERM)  
+    2-4        Kill range of processes (SIGTERM)
+    k [sel]    Kill menu with advanced options
+    K [sel]    Force kill menu (SIGKILL)
     r          Refresh the process list
     f          Change the filter pattern
+    s          Change sort order (port, pid, name, cpu, memory)
+    t          Toggle extended info display
+    a          Auto-refresh mode
+    h          Show this help
 
-    When killing processes, you can specify:
-    - Index numbers (e.g., "1 3" to kill processes 1 and 3)
-    - PIDs directly (e.g., "12345")
-    - Port numbers (e.g., ":3000" or "3000")
+    Direct kill examples (fastest method):
+    2          Kill process #2
+    1,3,5      Kill processes #1, #3, and #5
+    2-4        Kill processes #2 through #4
+
+    Advanced kill examples (k command):
+    k :3000    Kill process on port 3000
+    k 12345    Kill process with PID 12345
+    K 2-4      Force kill processes #2 through #4
+
+ENVIRONMENT VARIABLES:
+    DEVPORTS_EXTENDED=true/false    Show extended process info (default: true)
+    DEVPORTS_SORT=port/pid/name     Sort order (default: port)
+    DEVPORTS_REFRESH=seconds        Auto-refresh interval (default: 3)
 
 DEPENDENCIES:
     - lsof (for listing open files/ports)
@@ -210,6 +429,10 @@ check_dependencies() {
 
 devports_main() {
     local filter='node|python|uvicorn|gunicorn|ruby|rails|php|java|gradle|mvn|go|deno|bun|pnpm|vite|next|nuxt|webpack|rollup|parcel'
+    local show_extended="$SHOW_EXTENDED_INFO"
+    local sort_by="$SORT_BY"
+    local auto_refresh=false
+    local last_update_check=""
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
@@ -251,19 +474,91 @@ devports_main() {
     done
 
     while :; do
-        local rows
-        rows="$(lsof -nP -iTCP -sTCP:LISTEN -a -u "$USER" -Fpcn 2>/dev/null \
+        # Get process data
+        local raw_data
+        raw_data="$(lsof -nP -iTCP -sTCP:LISTEN -a -u "$USER" -Fpcn 2>/dev/null \
           | awk 'BEGIN{OFS=" "}
     /^p/ {pid=substr($0,2)}
     /^c/ {cmd=substr($0,2)}
     /^n/ {name=substr($0,2); if (pid && cmd && name) print cmd, pid, name}' \
           | grep -Ei "$filter" \
-          | sort -u)" || rows=""
+          | sort -u)" || raw_data=""
 
-        clear 2>/dev/null || printf '\033[2J\033[H'
+        # Build enhanced data with stats if extended info is enabled
+        local -a PROCESSES=()
+        local -a PIDS=()
+        local -a NAMES=()
+        local -a ADDRESSES=()
+        local -a STATS=()
         
-        echo "🚀 $PROGRAM_NAME v$VERSION - Development Server Manager"
-        echo "=================================================="
+        if [[ -n "$raw_data" ]]; then
+            while IFS= read -r line; do
+                local name pid address stats
+                name="$(awk '{print $1}' <<<"$line")"
+                pid="$(awk '{print $2}' <<<"$line")"
+                address="$(awk '{print $3}' <<<"$line")"
+                
+                NAMES+=("$name")
+                PIDS+=("$pid")
+                ADDRESSES+=("$address")
+                
+                # Get extended stats if enabled
+                if [[ "$show_extended" == "true" ]]; then
+                    stats="$(get_process_stats "$pid")"
+                else
+                    stats="-,-,-"
+                fi
+                STATS+=("$stats")
+                PROCESSES+=("$line")
+            done <<< "$raw_data"
+        fi
+
+        # Sort processes based on sort_by option
+        local -a sorted_indices=()
+        if [[ ${#PROCESSES[@]} -gt 0 ]]; then
+            case "$sort_by" in
+                port)
+                    # Sort by port number
+                    for i in "${!ADDRESSES[@]}"; do
+                        local port
+                        port=$(get_port_from_address "${ADDRESSES[i]}")
+                        sorted_indices+=("$port:$i")
+                    done
+                    IFS=$'\n' sorted_indices=($(sort -n <<<"${sorted_indices[*]}"))
+                    ;;
+                pid)
+                    # Sort by PID
+                    for i in "${!PIDS[@]}"; do
+                        sorted_indices+=("${PIDS[i]}:$i")
+                    done
+                    IFS=$'\n' sorted_indices=($(sort -n <<<"${sorted_indices[*]}"))
+                    ;;
+                name)
+                    # Sort by process name
+                    for i in "${!NAMES[@]}"; do
+                        sorted_indices+=("${NAMES[i]}:$i")
+                    done
+                    IFS=$'\n' sorted_indices=($(sort <<<"${sorted_indices[*]}"))
+                    ;;
+                cpu|memory)
+                    if [[ "$show_extended" == "true" ]]; then
+                        local field=1
+                        [[ "$sort_by" == "memory" ]] && field=2
+                        
+                        for i in "${!STATS[@]}"; do
+                            local value
+                            value=$(echo "${STATS[i]}" | cut -d',' -f$field | sed 's/%$//')
+                            sorted_indices+=("$value:$i")
+                        done
+                        IFS=$'\n' sorted_indices=($(sort -nr <<<"${sorted_indices[*]}"))
+                    fi
+                    ;;
+            esac
+        fi
+
+        # Clear screen and show header
+        clear 2>/dev/null || printf '\033[2J\033[H'
+        print_header
         
         # Quick non-blocking update check (only on first run of the session)
         if [[ "${DEVPORTS_UPDATE_CHECK:-}" != "done" ]] && command -v curl >/dev/null 2>&1; then
@@ -271,88 +566,209 @@ devports_main() {
             (check_for_updates "true" 2>/dev/null | grep -E "(📦|Run)" &) || true
         fi
         
+        if [[ ${#PROCESSES[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No matching user-owned listeners found.${RESET}"
+            echo -e "${DIM}Current filter: ${RESET}${CYAN}$filter${RESET}"
+            echo
+            echo -e "${DIM}Try:${RESET}"
+            echo -e "  ${BLUE}•${RESET} Use ${BOLD}'all'${RESET} to see all processes"
+            echo -e "  ${BLUE}•${RESET} Adjust your filter pattern with ${BOLD}'f'${RESET}"
+            echo -e "  ${BLUE}•${RESET} Start some development servers"
+            echo
+        else
+            print_table_header
+            
+            # Display processes
+            local i=0
+            if [[ ${#sorted_indices[@]} -gt 0 ]]; then
+                for entry in "${sorted_indices[@]}"; do
+                    local idx="${entry#*:}"
+                    i=$((i+1))
+                    print_table_row "$i" "${NAMES[idx]}" "${PIDS[idx]}" "${ADDRESSES[idx]}" "${STATS[idx]}"
+                done
+            else
+                for idx in "${!PROCESSES[@]}"; do
+                    i=$((i+1))
+                    print_table_row "$i" "${NAMES[idx]}" "${PIDS[idx]}" "${ADDRESSES[idx]}" "${STATS[idx]}"
+                done
+            fi
+            
+            echo
+        fi
+        
+        # Status line
+        local status_items=()
+        status_items+=("${DIM}Filter:${RESET} ${CYAN}$filter${RESET}")
+        status_items+=("${DIM}Sort:${RESET} ${YELLOW}$sort_by${RESET}")
+        [[ "$show_extended" == "true" ]] && status_items+=("${GREEN}Extended${RESET}") || status_items+=("${DIM}Basic${RESET}")
+        [[ "$auto_refresh" == "true" ]] && status_items+=("${BLUE}Auto${RESET}")
+        
+        printf "%s" "${status_items[0]}"
+        for item in "${status_items[@]:1}"; do
+            printf " ${DIM}|${RESET} %s" "$item"
+        done
+        echo
         echo
         
-        if [[ -z "$rows" ]]; then
-            echo "No matching user-owned listeners found."
-            echo "Current filter: $filter"
-            echo
-            echo "Try:"
-            echo "  - Use 'all' to see all processes"
-            echo "  - Adjust your filter pattern"
-            echo "  - Start some development servers"
-            return 1
+        # Command prompt
+        echo -e "${BOLD}Actions:${RESET} ${CYAN}1-9${RESET}=kill  ${BOLD}k${RESET}=kill menu  ${BOLD}K${RESET}=force kill  ${BOLD}r${RESET}=refresh  ${BOLD}f${RESET}=filter  ${BOLD}s${RESET}=sort  ${BOLD}t${RESET}=toggle  ${BOLD}a${RESET}=auto  ${BOLD}h${RESET}=help  ${DIM}[${RESET}${GREEN}Enter${RESET}${DIM}]${RESET}=exit"
+        
+        if [[ "$auto_refresh" == "true" ]]; then
+            echo -e "${YELLOW}Auto-refresh active${RESET} ${DIM}(press any key to stop)${RESET}"
+            if read -t "$REFRESH_INTERVAL" -r input; then
+                auto_refresh=false
+                # Parse the input to separate action and parameters
+                action="${input%% *}"  # First word
+                rest="${input#* }"     # Everything after first space
+                [[ "$rest" == "$input" ]] && rest=""  # If no space found, rest should be empty
+            else
+                action="r"
+                rest=""
+            fi
+        else
+            printf "${CYAN}>${RESET} "
+            read -r input
+            # Parse the input to separate action and parameters
+            action="${input%% *}"  # First word
+            rest="${input#* }"     # Everything after first space
+            [[ "$rest" == "$input" ]] && rest=""  # If no space found, rest should be empty
         fi
 
-        echo " #  CMD          PID    ADDRESS"
-        echo "-----------------------------------------"
-        local i=0
-        while IFS= read -r line; do
-            i=$((i+1))
-            printf "%2d  %-12s %-6s %s\n" "$i" "$(awk '{print $1}' <<<"$line")" "$(awk '{print $2}' <<<"$line")" "$(awk '{print $3}' <<<"$line")"
-        done <<< "$rows"
-
-        echo
-        echo "Filter: $filter"
-        echo
-        echo "Actions: [Enter]=exit  k=kill  K=force-kill  r=refresh  f=set filter"
-        printf "> "
-        read -r action _
+        # Check if input is a number pattern for direct kill
+        if [[ "$action" =~ ^[0-9]+([-,][0-9]+)*$ ]]; then
+            # Direct number input - treat as kill selection
+            local kill_selection="$action"
+            action="k"
+            rest="$kill_selection"
+        fi
 
         case "$action" in
             "" ) return 0 ;;
             r|R ) continue ;;
+            h|H ) 
+                show_help
+                echo
+                echo -e "${DIM}Press Enter to continue...${RESET}"
+                read -r _
+                continue
+                ;;
             f|F )
-                echo "Current filter: $filter"
+                echo -e "${DIM}Current filter:${RESET} ${CYAN}$filter${RESET}"
                 printf "New regex (or 'all'): "
                 read -r nf
                 [[ "$nf" == "all" ]] && filter='.' || [[ -n "$nf" ]] && filter="$nf"
                 continue
                 ;;
+            s|S )
+                echo -e "${DIM}Current sort:${RESET} ${YELLOW}$sort_by${RESET}"
+                echo "Options: port, pid, name$([ "$show_extended" == "true" ] && echo ", cpu, memory")"
+                printf "New sort order: "
+                read -r ns
+                case "$ns" in
+                    port|pid|name) sort_by="$ns" ;;
+                    cpu|memory) 
+                        if [[ "$show_extended" == "true" ]]; then
+                            sort_by="$ns"
+                        else
+                            echo -e "${RED}CPU/Memory sorting requires extended info (toggle with 't')${RESET}"
+                            sleep 2
+                        fi
+                        ;;
+                    *) echo -e "${RED}Invalid sort option${RESET}"; sleep 1 ;;
+                esac
+                continue
+                ;;
+            t|T )
+                if [[ "$show_extended" == "true" ]]; then
+                    show_extended="false"
+                    echo -e "${YELLOW}Extended info disabled${RESET}"
+                else
+                    show_extended="true"
+                    echo -e "${GREEN}Extended info enabled${RESET}"
+                fi
+                sleep 1
+                continue
+                ;;
+            a|A )
+                if [[ "$auto_refresh" == "true" ]]; then
+                    auto_refresh=false
+                    echo -e "${YELLOW}Auto-refresh disabled${RESET}"
+                else
+                    auto_refresh=true
+                    echo -e "${GREEN}Auto-refresh enabled (${REFRESH_INTERVAL}s)${RESET}"
+                fi
+                sleep 1
+                continue
+                ;;
             k|K )
+                [[ ${#PROCESSES[@]} -eq 0 ]] && { echo -e "${RED}No processes to kill${RESET}"; sleep 1; continue; }
+                
                 local sig="-TERM"; [[ "$action" == "K" ]] && sig="-KILL"
+                local sig_name="SIGTERM"; [[ "$action" == "K" ]] && sig_name="SIGKILL"
+                local sel="$rest"
 
-                echo "Select targets to kill (indices, PIDs, or ports like :3000 3001)."
-                echo "Examples: 1 3  :3000  40520"
-                printf "Selection: "
-                read -r sel
-                [[ -z "$sel" ]] && { echo "No selection."; sleep 1; continue; }
 
-                # Build arrays
-                local -a ENTRIES PIDS ADDRS
-                while IFS= read -r line; do
-                    ENTRIES+=("$line")
-                    PIDS+=("$(awk '{print $2}' <<<"$line")")
-                    ADDRS+=("$(awk '{print $3}' <<<"$line")")
-                done <<< "$rows"
+                # If no selection provided inline, prompt for it
+                if [[ -z "$sel" ]]; then
+                    echo -e "${BOLD}Select targets to kill${RESET} ${DIM}(indices, PIDs, or ports)${RESET}"
+                    echo -e "${DIM}Examples: ${CYAN}2${RESET}  ${CYAN}1,3,5${RESET}  ${CYAN}2-4${RESET}  ${CYAN}:3000${RESET}  ${CYAN}12345${RESET}"
+                    printf "Selection: "
+                    read -r sel
+                fi
+                
+                [[ -z "$sel" ]] && { echo -e "${YELLOW}No selection.${RESET}"; sleep 1; continue; }
+
+                # Parse the selection (handles ranges and comma-separated values)
+                local expanded_selection
+                expanded_selection=$(parse_selection "$sel")
+                
 
                 # Resolve selection → PID list
                 local -a CHOSEN=()
                 add_pid() {
                     local p="$1"
                     local x
-                    for x in "${CHOSEN[@]}"; do [[ "$x" == "$p" ]] && return 0; done
+                    for x in "${CHOSEN[@]+"${CHOSEN[@]}"}"; do [[ "$x" == "$p" ]] && return 0; done
                     CHOSEN+=("$p")
                 }
 
                 local tok
-                for tok in $sel; do
+                for tok in $expanded_selection; do
                     tok="${tok%,}"
                     if [[ "$tok" =~ ^[0-9]+$ ]]; then
-                        local idx="$tok"
-                        if (( idx>=1 && idx<=${#PIDS[@]} )); then
-                            add_pid "${PIDS[$((idx-1))]}"; continue
+                        local display_idx="$tok"
+                        if (( display_idx>=1 && display_idx<=${#PIDS[@]} )); then
+                            # Convert display index to actual array index
+                            # The display shows processes in the order they appear in the table
+                            # which matches the sorted_indices if sorting is active
+                            local actual_idx
+                            if [[ ${#sorted_indices[@]} -gt 0 ]]; then
+                                # Get the actual array index from sorted_indices
+                                if (( display_idx <= ${#sorted_indices[@]} )); then
+                                    local entry="${sorted_indices[$((display_idx-1))]}"
+                                    actual_idx="${entry#*:}"
+                                else
+                                    continue  # Invalid index
+                                fi
+                            else
+                                # No sorting, direct mapping
+                                actual_idx=$((display_idx-1))
+                            fi
+                            if (( actual_idx >= 0 && actual_idx < ${#PIDS[@]} )); then
+                                add_pid "${PIDS[$actual_idx]}"
+                            fi
+                            continue
                         fi
                         # maybe it was a PID
                         local p
-                        for p in "${PIDS[@]}"; do [[ "$p" == "$tok" ]] && add_pid "$p"; done
+                        for p in "${PIDS[@]+"${PIDS[@]}"}"; do [[ "$p" == "$tok" ]] && add_pid "$p"; done
                         continue
                     fi
                     if [[ "$tok" =~ ^:?[0-9]+$ ]]; then
                         local port="${tok#:}"
                         local j=0
                         local a
-                        for a in "${ADDRS[@]}"; do
+                        for a in "${ADDRESSES[@]+"${ADDRESSES[@]}"}"; do
                             [[ "$a" == *":$port" ]] && add_pid "${PIDS[$j]}"
                             j=$((j+1))
                         done
@@ -360,32 +776,52 @@ devports_main() {
                 done
 
                 if (( ${#CHOSEN[@]} == 0 )); then
-                    echo "No valid targets resolved."; sleep 1; continue
+                    echo -e "${RED}No valid targets resolved.${RESET}"; sleep 2; continue
                 fi
 
                 echo
-                echo "About to send $sig to:"
+                echo -e "${BOLD}About to send ${RED}$sig_name${RESET} to:${RESET}"
                 local pid
-                for pid in "${CHOSEN[@]}"; do
-                    awk -v p="$pid" '$2==p{printf "  %-12s %-6s %s\n",$1,$2,$3}' <<<"$rows"
+                for pid in "${CHOSEN[@]+"${CHOSEN[@]}"}"; do
+                    local j=0
+                    for p in "${PIDS[@]+"${PIDS[@]}"}"; do
+                        if [[ "$p" == "$pid" ]]; then
+                            printf "  %-15s %-8s %s\n" "$(format_process_name "${NAMES[j]}")" "$pid" "${ADDRESSES[j]}"
+                            break
+                        fi
+                        j=$((j+1))
+                    done
                 done
-                printf "Proceed? [y/N] "
+                printf "${BOLD}Proceed? [y/N]${RESET} "
                 read -r yes
-                [[ "$yes" =~ ^[Yy]$ ]] || { echo "Aborted."; sleep 1; continue; }
+                [[ "$yes" =~ ^[Yy]$ ]] || { echo -e "${YELLOW}Aborted.${RESET}"; sleep 1; continue; }
 
-                for pid in "${CHOSEN[@]}"; do
+                echo
+                for pid in "${CHOSEN[@]+"${CHOSEN[@]}"}"; do
                     if kill "$sig" "$pid" 2>/dev/null; then
-                        echo "✔ $pid"
+                        echo -e "  ${GREEN}✔${RESET} $pid"
                     else
-                        echo "✖ $pid (process may have already exited)"
+                        echo -e "  ${RED}✖${RESET} $pid ${DIM}(process may have already exited)${RESET}"
                     fi
                 done
-                echo "Press Enter to refresh."
+                echo
+                echo -e "${DIM}Press Enter to refresh...${RESET}"
                 read -r _
                 continue
                 ;;
             * )
-                echo "Unknown action: $action"; sleep 1; continue ;;
+                # Check if it's a kill command with inline selection (k2, K3, etc.)
+                if [[ "$action" =~ ^[kK](.+)$ ]]; then
+                    local inline_sel="${BASH_REMATCH[1]}"
+                    local sig="-TERM"; [[ "$action" =~ ^K ]] && sig="-KILL"
+                    local sig_name="SIGTERM"; [[ "$action" =~ ^K ]] && sig_name="SIGKILL"
+                    
+                    # Process the inline selection
+                    action="k"
+                    rest="$inline_sel"
+                    continue
+                fi
+                echo -e "${RED}Unknown action: $action${RESET}"; sleep 1; continue ;;
         esac
     done
 }

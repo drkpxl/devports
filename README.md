@@ -1,10 +1,10 @@
 # devports
 
-Interactive CLI tool for viewing and killing development server processes.
+Interactive CLI tool for viewing and killing development server processes with enhanced TUI features and direct number selection.
 
 ## What it does
 
-`devports` shows you all the development servers running on your machine (node, python, rails, etc.) in a clean, interactive interface. You can easily kill processes by index, PID, or port number.
+`devports` shows you all the development servers running on your machine (node, python, rails, etc.) in a beautiful, color-coded interface with real-time CPU/memory stats. Kill processes instantly by typing just their number - no more multi-step commands!
 
 ## Installation
 
@@ -20,9 +20,9 @@ Visit the [releases page](https://github.com/drkpxl/devports/releases) to downlo
 
 ```bash
 # Download and extract the latest release
-wget https://github.com/drkpxl/devports/releases/latest/download/devports-1.0.0.tar.gz
-tar -xzf devports-1.0.0.tar.gz
-cd devports-1.0.0
+wget https://github.com/drkpxl/devports/releases/latest/download/devports-1.2.0.tar.gz
+tar -xzf devports-1.2.0.tar.gz
+cd devports-1.2.0
 make install-local
 ```
 
@@ -58,37 +58,80 @@ devports --update
 
 ### Interactive Commands
 
-- **Enter** - Exit
-- **k** - Kill selected processes (SIGTERM)
-- **K** - Force kill selected processes (SIGKILL) 
+#### 🚀 Quick Kill (New in v1.2.0)
+- **1-9** - Kill processes directly by number (fastest method!)
+- **1,3,5** - Kill multiple processes at once  
+- **2-4** - Kill range of processes
+
+#### Advanced Commands
+- **k** - Kill menu with advanced options (PIDs, ports)
+- **K** - Force kill menu (SIGKILL)
 - **r** - Refresh process list
 - **f** - Change filter pattern
+- **s** - Change sort order (port, pid, name, cpu, memory)
+- **t** - Toggle extended info display (CPU/Memory/Uptime)
+- **a** - Auto-refresh mode
+- **h** - Show help
+- **Enter** - Exit
 
-When killing processes, you can specify:
-- Index numbers: `1 3` (kill processes 1 and 3)
+#### Advanced Kill Options (k command)
 - PIDs directly: `12345`
 - Port numbers: `:3000` or `3000`
+- Complex selections: `k 1,3 :8080 12345`
 
 ## Examples
 
+### Enhanced Interface (v1.2.0)
+
 ```bash
 $ devports
-🚀 devports v1.0.0 - Development Server Manager
-==================================================
+🚀 devports v1.2.0 - Development Server Manager
+═══════════════════════════════════════════════════
 
- #  CMD          PID    ADDRESS
------------------------------------------
- 1  node         1234   *:3000
- 2  python3      5678   127.0.0.1:8000
- 3  ruby         9012   *:4000
+  #  PROCESS         PID      PORT   ADDRESS     CPU%   MEM%   UPTIME
+─────────────────────────────────────────────────────────────────────
+  1  node            12345    3000   *:3000      1.2%   2.1%   2h 15m
+  2  python          67890    8080   *:8080      0.8%   1.5%   5h 30m
+  3  ruby            54321    4567   *:4567      2.1%   1.8%   45m
 
-Filter: node|python|uvicorn|gunicorn|ruby|rails|php|java|gradle|mvn|go|deno|bun|pnpm|vite|next|nuxt|webpack|rollup|parcel
+Filter: node|python|rails | Sort: port | Extended
 
-Actions: [Enter]=exit  k=kill  K=force-kill  r=refresh  f=set filter
-> k
-Select targets to kill (indices, PIDs, or ports like :3000 3001).
-Examples: 1 3  :3000  40520
-Selection: :3000
+Actions: 1-9=kill  k=kill menu  r=refresh  [Enter]=exit
+> 2              ← Just type the number!
+Kill python (PID: 67890) on port 8080? [y/N] y
+✔ Killed process 67890
+```
+
+### Quick Kill Examples
+
+```bash
+# Kill process #1
+> 1
+
+# Kill multiple processes
+> 1,3,5
+
+# Kill range of processes  
+> 2-4
+
+# Advanced kill by port
+> k :3000
+
+# Force kill by PID
+> K 12345
+```
+
+### Configuration Options
+
+```bash
+# Show extended process info (default: true)
+export DEVPORTS_EXTENDED=true
+
+# Default sort order (port, pid, name, cpu, memory) 
+export DEVPORTS_SORT=port
+
+# Auto-refresh interval in seconds
+export DEVPORTS_REFRESH=3
 ```
 
 ## Requirements
