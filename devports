@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+#
+# devports - Interactive CLI tool for viewing and killing development server processes
+# 
+# Author: Steven Hubert
+# Version: 1.0.0
+# Repository: https://github.com/stevenhubert/devports
+#
+
+set -euo pipefail
+
+VERSION="1.0.0"
+PROGRAM_NAME="devports"
+
+show_help() {
+    cat << EOF
+$PROGRAM_NAME - Interactive CLI for managing development server processes
+
+USAGE:
+    $PROGRAM_NAME [OPTIONS] [FILTER]
+
+DESCRIPTION:
+    View and kill development server processes running on your machine.
+    Shows processes like node, python, rails, etc. in an interactive menu.
+
+OPTIONS:
+    -h, --help      Show this help message
+    -v, --version   Show version information
+    -a, --all       Show all processes (equivalent to filter 'all')
+
+FILTER:
+    Optional regex pattern to filter processes. Default shows common dev servers:
+    node, python, uvicorn, gunicorn, ruby, rails, php, java, gradle, mvn, 
+    go, deno, bun, pnpm, vite, next, nuxt, webpack, rollup, parcel
+
+EXAMPLES:
+    $PROGRAM_NAME                    # Show common dev servers
+    $PROGRAM_NAME all               # Show all listening processes
+    $PROGRAM_NAME node              # Show only node processes
+    $PROGRAM_NAME "rails|ruby"      # Show rails or ruby processes
+
+INTERACTIVE COMMANDS:
+    [Enter]    Exit the program
+    k          Kill selected processes (SIGTERM)
+    K          Force kill selected processes (SIGKILL)
+    r          Refresh the process list
+    f          Change the filter pattern
+
+    When killing processes, you can specify:
+    - Index numbers (e.g., "1 3" to kill processes 1 and 3)
+    - PIDs directly (e.g., "12345")
+    - Port numbers (e.g., ":3000" or "3000")
+
+DEPENDENCIES:
+    - lsof (for listing open files/ports)
+    - awk (for text processing)
+    - bash 4.0+ or compatible shell
+
+EOF
+}
+
+show_version() {
+    echo "$PROGRAM_NAME version $VERSION"
+}
+
+check_dependencies() {
+    local missing=()
+    
+    command -v lsof >/dev/null 2>&1 || missing+=("lsof")
+    command -v awk >/dev/null 2>&1 || missing+=("awk")
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "Error: Missing required dependencies: ${missing[*]}" >&2
+        echo "Please install the missing tools and try again." >&2
+        exit 1
+    fi
+}
+
+devports_main() {
+    local filter='node|python|uvicorn|gunicorn|ruby|rails|php|java|gradle|mvn|go|deno|bun|pnpm|vite|next|nuxt|webpack|rollup|parcel'
+    
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                show_version
+                exit 0
+                ;;
+            -a|--all)
+                filter='.'
+                shift
+                ;;
+            -*)
+                echo "Error: Unknown option $1" >&2
+                echo "Use --help for usage information." >&2
+                exit 1
+                ;;
+            *)
+                if [[ "$1" == "all" ]]; then
+                    filter='.'
+                else
+                    filter="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    while :; do
+        local rows
+        rows="$(lsof -nP -iTCP -sTCP:LISTEN -a -u "$USER" -Fpcn 2>/dev/null \
+          | awk 'BEGIN{OFS=" "}
+    /^p/ {pid=substr($0,2)}
+    /^c/ {cmd=substr($0,2)}
+    /^n/ {name=substr($0,2); if (pid && cmd && name) print cmd, pid, name}' \
+          | grep -Ei "$filter" \
+          | sort -u)" || rows=""
+
+        clear 2>/dev/null || printf '\033[2J\033[H'
+        
+        echo "🚀 $PROGRAM_NAME v$VERSION - Development Server Manager"
+        echo "=================================================="
+        echo
+        
+        if [[ -z "$rows" ]]; then
+            echo "No matching user-owned listeners found."
+            echo "Current filter: $filter"
+            echo
+            echo "Try:"
+            echo "  - Use 'all' to see all processes"
+            echo "  - Adjust your filter pattern"
+            echo "  - Start some development servers"
+            return 1
+        fi
+
+        echo " #  CMD          PID    ADDRESS"
+        echo "-----------------------------------------"
+        local i=0
+        while IFS= read -r line; do
+            i=$((i+1))
+            printf "%2d  %-12s %-6s %s\n" "$i" "$(awk '{print $1}' <<<"$line")" "$(awk '{print $2}' <<<"$line")" "$(awk '{print $3}' <<<"$line")"
+        done <<< "$rows"
+
+        echo
+        echo "Filter: $filter"
+        echo
+        echo "Actions: [Enter]=exit  k=kill  K=force-kill  r=refresh  f=set filter"
+        printf "> "
+        read -r action _
+
+        case "$action" in
+            "" ) return 0 ;;
+            r|R ) continue ;;
+            f|F )
+                echo "Current filter: $filter"
+                printf "New regex (or 'all'): "
+                read -r nf
+                [[ "$nf" == "all" ]] && filter='.' || [[ -n "$nf" ]] && filter="$nf"
+                continue
+                ;;
+            k|K )
+                local sig="-TERM"; [[ "$action" == "K" ]] && sig="-KILL"
+
+                echo "Select targets to kill (indices, PIDs, or ports like :3000 3001)."
+                echo "Examples: 1 3  :3000  40520"
+                printf "Selection: "
+                read -r sel
+                [[ -z "$sel" ]] && { echo "No selection."; sleep 1; continue; }
+
+                # Build arrays
+                local -a ENTRIES PIDS ADDRS
+                while IFS= read -r line; do
+                    ENTRIES+=("$line")
+                    PIDS+=("$(awk '{print $2}' <<<"$line")")
+                    ADDRS+=("$(awk '{print $3}' <<<"$line")")
+                done <<< "$rows"
+
+                # Resolve selection → PID list
+                local -a CHOSEN=()
+                add_pid() {
+                    local p="$1"
+                    local x
+                    for x in "${CHOSEN[@]}"; do [[ "$x" == "$p" ]] && return 0; done
+                    CHOSEN+=("$p")
+                }
+
+                local tok
+                for tok in $sel; do
+                    tok="${tok%,}"
+                    if [[ "$tok" =~ ^[0-9]+$ ]]; then
+                        local idx="$tok"
+                        if (( idx>=1 && idx<=${#PIDS[@]} )); then
+                            add_pid "${PIDS[$((idx-1))]}"; continue
+                        fi
+                        # maybe it was a PID
+                        local p
+                        for p in "${PIDS[@]}"; do [[ "$p" == "$tok" ]] && add_pid "$p"; done
+                        continue
+                    fi
+                    if [[ "$tok" =~ ^:?[0-9]+$ ]]; then
+                        local port="${tok#:}"
+                        local j=0
+                        local a
+                        for a in "${ADDRS[@]}"; do
+                            [[ "$a" == *":$port" ]] && add_pid "${PIDS[$j]}"
+                            j=$((j+1))
+                        done
+                    fi
+                done
+
+                if (( ${#CHOSEN[@]} == 0 )); then
+                    echo "No valid targets resolved."; sleep 1; continue
+                fi
+
+                echo
+                echo "About to send $sig to:"
+                local pid
+                for pid in "${CHOSEN[@]}"; do
+                    awk -v p="$pid" '$2==p{printf "  %-12s %-6s %s\n",$1,$2,$3}' <<<"$rows"
+                done
+                printf "Proceed? [y/N] "
+                read -r yes
+                [[ "$yes" =~ ^[Yy]$ ]] || { echo "Aborted."; sleep 1; continue; }
+
+                for pid in "${CHOSEN[@]}"; do
+                    if kill "$sig" "$pid" 2>/dev/null; then
+                        echo "✔ $pid"
+                    else
+                        echo "✖ $pid (process may have already exited)"
+                    fi
+                done
+                echo "Press Enter to refresh."
+                read -r _
+                continue
+                ;;
+            * )
+                echo "Unknown action: $action"; sleep 1; continue ;;
+        esac
+    done
+}
+
+# Check dependencies before running
+check_dependencies
+
+# Run main function
+devports_main "$@"
