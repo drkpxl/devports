@@ -156,14 +156,26 @@ install_devports() {
             shell_rc="$HOME/.bashrc"
         fi
         
-        if [[ -n "$shell_rc" && -w "$shell_rc" ]]; then
-            echo "Adding $install_dir to PATH in $shell_rc..."
-            echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_rc"
-            print_success "PATH updated! Restart your terminal or run: source $shell_rc"
+        if [[ -n "$shell_rc" ]]; then
+            if [[ -w "$shell_rc" ]]; then
+                echo "Adding $install_dir to PATH in $shell_rc..."
+                echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_rc"
+                print_success "PATH updated! Restart your terminal or run: source $shell_rc"
+            elif [[ ! -f "$shell_rc" ]]; then
+                echo "Creating $shell_rc and adding PATH..."
+                echo "export PATH=\"$install_dir:\$PATH\"" > "$shell_rc"
+                print_success "PATH configured! Restart your terminal to use $PROGRAM_NAME"
+            else
+                echo "Cannot write to $shell_rc (permission denied)"
+                echo "Run this command to fix:"
+                echo "  sudo chown $USER:staff $shell_rc"
+                echo "Then rerun the installer, or add manually:"
+                echo "  export PATH=\"$install_dir:\$PATH\""
+            fi
             echo
             print_success "Then run: $PROGRAM_NAME --help"
         else
-            echo "To use $PROGRAM_NAME, manually add this to your shell profile:"
+            echo "To use $PROGRAM_NAME, add this to your shell profile:"
             echo "  export PATH=\"$install_dir:\$PATH\""
             echo
             echo "Or run directly with full path:"
