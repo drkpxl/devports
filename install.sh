@@ -8,7 +8,7 @@
 set -euo pipefail
 
 PROGRAM_NAME="devports"
-RAW_URL="https://raw.githubusercontent.com/stevenhubert/devports/main"
+RAW_URL="https://raw.githubusercontent.com/drkpxl/devports/main"
 
 # Colors for output
 RED='\033[0;31m'

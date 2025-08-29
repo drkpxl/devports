@@ -11,19 +11,19 @@ Interactive CLI tool for viewing and killing development server processes.
 ### Homebrew (Recommended)
 
 ```bash
-brew install stevenhubert/tap/devports
+brew install drkpxl/tap/devports
 ```
 
 ### Manual Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/drkpxl/devports/main/install.sh | bash
 ```
 
 Or download and run locally:
 
 ```bash
-git clone https://github.com/stevenhubert/devports.git
+git clone https://github.com/drkpxl/devports.git
 cd devports
 make install-local
 ```
@@ -90,7 +90,7 @@ These are standard on macOS and most Linux distributions.
 ## Building from Source
 
 ```bash
-git clone https://github.com/stevenhubert/devports.git
+git clone https://github.com/drkpxl/devports.git
 cd devports
 make check    # Verify dependencies and syntax
 make test     # Run basic tests
