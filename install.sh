@@ -123,12 +123,18 @@ install_devports() {
     # Install
     if [[ -f "$install_path" && "$force_install" != "true" ]]; then
         print_warning "$PROGRAM_NAME already exists at $install_path"
-        printf "Overwrite? [y/N] "
-        read -r response </dev/tty
-        if [[ ! "$response" =~ ^[Yy]$ ]]; then
-            print_info "Installation cancelled"
-            rm -f "$temp_file"
-            exit 0
+        if [[ -t 0 ]]; then
+            # Interactive terminal
+            printf "Overwrite? [y/N] "
+            read -r response
+            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                print_info "Installation cancelled"
+                rm -f "$temp_file"
+                exit 0
+            fi
+        else
+            # Being piped, default to yes
+            print_info "Overwriting existing installation (use --force to skip this prompt)"
         fi
     fi
     
