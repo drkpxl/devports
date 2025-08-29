@@ -3,7 +3,7 @@
 # Simple installation and management for the devports CLI tool
 
 PROGRAM_NAME = devports
-VERSION = 1.0.0
+VERSION = 1.1.0
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 LOCAL_BINDIR = $(HOME)/.local/bin
