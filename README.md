@@ -8,7 +8,14 @@ Interactive CLI tool for viewing and killing development server processes.
 
 ## Installation
 
-### Quick Install (Recommended)
+### Homebrew (Recommended)
+
+```bash
+brew tap drkpxl/devports
+brew install devports
+```
+
+### Quick Install Script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/drkpxl/devports/main/install.sh | bash
