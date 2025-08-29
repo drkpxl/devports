@@ -147,13 +147,29 @@ install_devports() {
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
         print_warning "$install_dir is not in your PATH"
         echo
-        echo "To use $PROGRAM_NAME, add this to your shell profile:"
-        echo "  echo 'export PATH=\"$install_dir:\$PATH\"' >> ~/.zshrc"
-        echo "  source ~/.zshrc"
-        echo
-        echo "Or run directly with full path:"
-        echo "  $install_path --help"
-        echo
+        
+        # Try to add to PATH automatically
+        local shell_rc=""
+        if [[ -n "$ZSH_VERSION" ]]; then
+            shell_rc="$HOME/.zshrc"
+        elif [[ -n "$BASH_VERSION" ]]; then
+            shell_rc="$HOME/.bashrc"
+        fi
+        
+        if [[ -n "$shell_rc" && -w "$shell_rc" ]]; then
+            echo "Adding $install_dir to PATH in $shell_rc..."
+            echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_rc"
+            print_success "PATH updated! Restart your terminal or run: source $shell_rc"
+            echo
+            print_success "Then run: $PROGRAM_NAME --help"
+        else
+            echo "To use $PROGRAM_NAME, manually add this to your shell profile:"
+            echo "  export PATH=\"$install_dir:\$PATH\""
+            echo
+            echo "Or run directly with full path:"
+            echo "  $install_path --help"
+            echo
+        fi
     else
         print_success "Installation complete! Run '$PROGRAM_NAME --help' to get started."
     fi
@@ -187,7 +203,12 @@ uninstall_devports() {
 }
 
 main() {
+    # Default to /usr/local/bin if writable, otherwise ~/.local/bin
     local INSTALL_DIR="$HOME/.local/bin"
+    if [[ -w "/usr/local/bin" ]]; then
+        INSTALL_DIR="/usr/local/bin"
+    fi
+    
     local SYSTEM_INSTALL=false
     local UNINSTALL=false
     local FORCE=false
