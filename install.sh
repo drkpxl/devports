@@ -123,7 +123,7 @@ install_devports() {
     if [[ -f "$install_path" && "$FORCE" != "true" ]]; then
         print_warning "$PROGRAM_NAME already exists at $install_path"
         printf "Overwrite? [y/N] "
-        read -r response
+        read -r response </dev/tty
         if [[ ! "$response" =~ ^[Yy]$ ]]; then
             print_info "Installation cancelled"
             rm -f "$temp_file"
@@ -140,12 +140,16 @@ install_devports() {
     if [[ ":$PATH:" != *":$install_dir:"* ]]; then
         print_warning "$install_dir is not in your PATH"
         echo
-        echo "Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
-        echo "  export PATH=\"$install_dir:\$PATH\""
+        echo "To use $PROGRAM_NAME, add this to your shell profile:"
+        echo "  echo 'export PATH=\"$install_dir:\$PATH\"' >> ~/.zshrc"
+        echo "  source ~/.zshrc"
         echo
+        echo "Or run directly with full path:"
+        echo "  $install_path --help"
+        echo
+    else
+        print_success "Installation complete! Run '$PROGRAM_NAME --help' to get started."
     fi
-    
-    print_success "Installation complete! Run '$PROGRAM_NAME --help' to get started."
 }
 
 uninstall_devports() {
