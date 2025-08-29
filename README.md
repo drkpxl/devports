@@ -11,16 +11,16 @@ Interactive CLI tool for viewing and killing development server processes.
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/drkpxl/devports/main/install.sh | bash
 ```
 
 ### Download from Releases
 
-Visit the [releases page](https://github.com/stevenhubert/devports/releases) to download the latest version:
+Visit the [releases page](https://github.com/drkpxl/devports/releases) to download the latest version:
 
 ```bash
 # Download and extract the latest release
-wget https://github.com/stevenhubert/devports/releases/latest/download/devports-1.0.0.tar.gz
+wget https://github.com/drkpxl/devports/releases/latest/download/devports-1.0.0.tar.gz
 tar -xzf devports-1.0.0.tar.gz
 cd devports-1.0.0
 make install-local
@@ -29,7 +29,7 @@ make install-local
 ### Build from Source
 
 ```bash
-git clone https://github.com/stevenhubert/devports.git
+git clone https://github.com/drkpxl/devports.git
 cd devports
 make install-local
 ```
@@ -125,7 +125,7 @@ If the built-in updater doesn't work, you can always reinstall:
 
 ```bash
 # Reinstall using the install script
-curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/drkpxl/devports/main/install.sh | bash
 ```
 
 ## Development
@@ -133,7 +133,7 @@ curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.
 ### Building from Source
 
 ```bash
-git clone https://github.com/stevenhubert/devports.git
+git clone https://github.com/drkpxl/devports.git
 cd devports
 make check    # Verify dependencies and syntax
 make test     # Run basic tests

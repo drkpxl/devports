@@ -4,7 +4,7 @@
 # 
 # Author: Steven Hubert
 # Version: 1.0.0
-# Repository: https://github.com/stevenhubert/devports
+# Repository: https://github.com/drkpxl/devports
 #
 
 set -euo pipefail
@@ -66,7 +66,7 @@ show_version() {
 }
 
 check_for_updates() {
-    local repo_url="https://api.github.com/repos/stevenhubert/devports/releases/latest"
+    local repo_url="https://api.github.com/repos/drkpxl/devports/releases/latest"
     local current_version="$VERSION"
     local check_only="${1:-false}"
     
@@ -149,7 +149,7 @@ update_devports() {
     if [[ -z "$install_path" ]]; then
         echo "❌ Could not determine installation location"
         echo "Please reinstall using the install script:"
-        echo "curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash"
+        echo "curl -fsSL https://raw.githubusercontent.com/drkpxl/devports/main/install.sh | bash"
         return 1
     fi
     
@@ -165,7 +165,7 @@ update_devports() {
     # Download the latest version
     local temp_file
     temp_file=$(mktemp)
-    local download_url="https://raw.githubusercontent.com/stevenhubert/devports/main/devports"
+    local download_url="https://raw.githubusercontent.com/drkpxl/devports/main/devports"
     
     echo "📥 Downloading latest version..."
     if curl -fsSL --max-time 10 "$download_url" -o "$temp_file"; then
