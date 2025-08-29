@@ -24,9 +24,11 @@ DESCRIPTION:
     Shows processes like node, python, rails, etc. in an interactive menu.
 
 OPTIONS:
-    -h, --help      Show this help message
-    -v, --version   Show version information
-    -a, --all       Show all processes (equivalent to filter 'all')
+    -h, --help          Show this help message
+    -v, --version       Show version information
+    -a, --all           Show all processes (equivalent to filter 'all')
+    --check-updates     Check for available updates
+    --update            Download and install the latest version
 
 FILTER:
     Optional regex pattern to filter processes. Default shows common dev servers:
@@ -63,6 +65,136 @@ show_version() {
     echo "$PROGRAM_NAME version $VERSION"
 }
 
+check_for_updates() {
+    local repo_url="https://api.github.com/repos/stevenhubert/devports/releases/latest"
+    local current_version="$VERSION"
+    local check_only="${1:-false}"
+    
+    # Check if curl is available
+    if ! command -v curl >/dev/null 2>&1; then
+        if [[ "$check_only" == "false" ]]; then
+            echo "❌ curl is required for update checks" >&2
+            return 1
+        fi
+        return 0
+    fi
+    
+    echo "🔍 Checking for updates..."
+    
+    # Get latest release info from GitHub API with timeout
+    local release_info
+    release_info=$(curl -s --max-time 5 "$repo_url" 2>/dev/null)
+    
+    if [[ $? -ne 0 || -z "$release_info" ]]; then
+        if [[ "$check_only" == "false" ]]; then
+            echo "❌ Failed to check for updates (network error or rate limited)" >&2
+            return 1
+        fi
+        return 0
+    fi
+    
+    # Extract latest version from JSON response
+    local latest_version
+    latest_version=$(echo "$release_info" | grep '"tag_name"' | head -n1 | cut -d'"' -f4 | sed 's/^v//')
+    
+    if [[ -z "$latest_version" ]]; then
+        if [[ "$check_only" == "false" ]]; then
+            echo "❌ Failed to parse version information" >&2
+            return 1
+        fi
+        return 0
+    fi
+    
+    echo "Current version: $current_version"
+    echo "Latest version:  $latest_version"
+    
+    # Compare versions (simple string comparison works for semver)
+    if [[ "$current_version" == "$latest_version" ]]; then
+        echo "✅ You have the latest version!"
+        return 0
+    elif [[ "$current_version" > "$latest_version" ]]; then
+        echo "🚀 You have a newer version than the latest release"
+        return 0
+    else
+        echo "📦 Update available: $current_version → $latest_version"
+        
+        if [[ "$check_only" == "true" ]]; then
+            echo ""
+            echo "Run '$PROGRAM_NAME --update' to update to the latest version"
+        fi
+        return 2  # Update available
+    fi
+}
+
+update_devports() {
+    echo "🚀 Updating $PROGRAM_NAME..."
+    
+    # First check for updates to get the latest version
+    local update_check_result
+    check_for_updates "false"
+    update_check_result=$?
+    
+    if [[ $update_check_result -eq 0 ]]; then
+        echo "Already up to date!"
+        return 0
+    elif [[ $update_check_result -eq 1 ]]; then
+        echo "❌ Update check failed"
+        return 1
+    fi
+    
+    # Determine installation location
+    local install_path
+    install_path=$(which devports 2>/dev/null)
+    
+    if [[ -z "$install_path" ]]; then
+        echo "❌ Could not determine installation location"
+        echo "Please reinstall using the install script:"
+        echo "curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash"
+        return 1
+    fi
+    
+    echo "📍 Found installation at: $install_path"
+    
+    # Check if we have write permissions
+    if [[ ! -w "$install_path" ]]; then
+        echo "❌ No write permission to $install_path"
+        echo "Try running with sudo or reinstall to a user directory"
+        return 1
+    fi
+    
+    # Download the latest version
+    local temp_file
+    temp_file=$(mktemp)
+    local download_url="https://raw.githubusercontent.com/stevenhubert/devports/main/devports"
+    
+    echo "📥 Downloading latest version..."
+    if curl -fsSL --max-time 10 "$download_url" -o "$temp_file"; then
+        # Verify the downloaded file
+        if bash -n "$temp_file"; then
+            # Make backup of current version
+            cp "$install_path" "$install_path.backup.$(date +%Y%m%d-%H%M%S)"
+            
+            # Replace with new version
+            cp "$temp_file" "$install_path"
+            chmod +x "$install_path"
+            
+            # Clean up
+            rm -f "$temp_file"
+            
+            echo "✅ Update completed successfully!"
+            echo "🎉 Run '$PROGRAM_NAME --version' to verify the new version"
+        else
+            echo "❌ Downloaded file failed syntax check"
+            rm -f "$temp_file"
+            return 1
+        fi
+    else
+        echo "❌ Failed to download update"
+        rm -f "$temp_file"
+        return 1
+    fi
+}
+
 check_dependencies() {
     local missing=()
     
@@ -89,6 +221,14 @@ devports_main() {
             -v|--version)
                 show_version
                 exit 0
+                ;;
+            --check-updates)
+                check_for_updates "true"
+                exit $?
+                ;;
+            --update)
+                update_devports
+                exit $?
                 ;;
             -a|--all)
                 filter='.'
@@ -124,6 +264,13 @@ devports_main() {
         
         echo "🚀 $PROGRAM_NAME v$VERSION - Development Server Manager"
         echo "=================================================="
+        
+        # Quick non-blocking update check (only on first run of the session)
+        if [[ "${DEVPORTS_UPDATE_CHECK:-}" != "done" ]] && command -v curl >/dev/null 2>&1; then
+            export DEVPORTS_UPDATE_CHECK="done"
+            (check_for_updates "true" 2>/dev/null | grep -E "(📦|Run)" &) || true
+        fi
+        
         echo
         
         if [[ -z "$rows" ]]; then

@@ -1,0 +1,43 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check dependencies
+        run: |
+          make check
+
+      - name: Run tests
+        run: |
+          make test
+
+      - name: Lint with shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          make lint
+
+      - name: Test installation process
+        run: |
+          # Test local installation
+          make install-local
+          
+          # Verify it's installed and working
+          ~/.local/bin/devports --version
+          ~/.local/bin/devports --help
+
+      - name: Test install script
+        run: |
+          # Test the install script (dry run mode if possible)
+          bash -n install.sh
+          echo "✅ Install script syntax is valid"

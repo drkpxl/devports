@@ -11,13 +11,25 @@ Interactive CLI tool for viewing and killing development server processes.
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/drkpxl/devports/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash
 ```
 
-Or download and run locally:
+### Download from Releases
+
+Visit the [releases page](https://github.com/stevenhubert/devports/releases) to download the latest version:
 
 ```bash
-git clone https://github.com/drkpxl/devports.git
+# Download and extract the latest release
+wget https://github.com/stevenhubert/devports/releases/latest/download/devports-1.0.0.tar.gz
+tar -xzf devports-1.0.0.tar.gz
+cd devports-1.0.0
+make install-local
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/stevenhubert/devports.git
 cd devports
 make install-local
 ```
@@ -36,6 +48,12 @@ devports node
 
 # Show rails or ruby processes
 devports "rails|ruby"
+
+# Check for updates
+devports --check-updates
+
+# Update to latest version
+devports --update
 ```
 
 ### Interactive Commands
@@ -81,15 +99,66 @@ Selection: :3000
 
 These are standard on macOS and most Linux distributions.
 
-## Building from Source
+## Updating
+
+DevPorts includes built-in update functionality:
+
+### Check for Updates
+```bash
+devports --check-updates
+```
+
+### Update to Latest Version
+```bash
+devports --update
+```
+
+The update command will:
+- Check for the latest version on GitHub
+- Download the new version
+- Create a backup of your current installation
+- Replace the old version with the new one
+- Verify the installation
+
+### Manual Update
+If the built-in updater doesn't work, you can always reinstall:
 
 ```bash
-git clone https://github.com/drkpxl/devports.git
+# Reinstall using the install script
+curl -fsSL https://raw.githubusercontent.com/stevenhubert/devports/main/install.sh | bash
+```
+
+## Development
+
+### Building from Source
+
+```bash
+git clone https://github.com/stevenhubert/devports.git
 cd devports
 make check    # Verify dependencies and syntax
 make test     # Run basic tests
 make install-local  # Install to ~/.local/bin
 ```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes and test them: `make test`
+4. Commit your changes: `git commit -am 'Add some feature'`
+5. Push to the branch: `git push origin feature-name`
+6. Submit a pull request
+
+### Releasing
+
+Releases are automated via GitHub Actions. To create a new release:
+
+1. Update the version in both `devports` script and `Makefile`
+2. Update the `CHANGELOG.md` with the new version
+3. Commit changes: `git commit -am 'Bump version to x.x.x'`
+4. Create and push a tag: `git tag -a vx.x.x -m 'Release vx.x.x' && git push origin vx.x.x`
+
+The GitHub Action will automatically create the release with archives and update the install script.
 
 ## License
 

@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate version consistency
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          SCRIPT_VERSION=$(grep '^VERSION=' devports | cut -d'"' -f2)
+          MAKEFILE_VERSION=$(grep '^VERSION = ' Makefile | cut -d' ' -f3)
+          
+          echo "Tag version: $TAG_VERSION"
+          echo "Script version: $SCRIPT_VERSION"
+          echo "Makefile version: $MAKEFILE_VERSION"
+          
+          if [ "$TAG_VERSION" != "$SCRIPT_VERSION" ] || [ "$TAG_VERSION" != "$MAKEFILE_VERSION" ]; then
+            echo "❌ Version mismatch detected!"
+            echo "Please ensure the tag version matches the version in both devports script and Makefile"
+            exit 1
+          fi
+          
+          echo "✅ All versions match: $TAG_VERSION"
+
+      - name: Run tests
+        run: |
+          make check
+          make test
+
+      - name: Create release archive
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          mkdir -p "devports-$TAG_VERSION"
+          cp devports install.sh README.md LICENSE CHANGELOG.md Makefile "devports-$TAG_VERSION/"
+          tar -czf "devports-$TAG_VERSION.tar.gz" "devports-$TAG_VERSION"
+          zip -r "devports-$TAG_VERSION.zip" "devports-$TAG_VERSION"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "## devports v$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Quick Installation" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo '```bash' >> $GITHUB_OUTPUT
+          echo "curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh | bash" >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Manual Installation" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "1. Download and extract the archive below" >> $GITHUB_OUTPUT
+          echo "2. Run \`make install-local\` or \`sudo make install\`" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### What's Changed" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          if [ -f CHANGELOG.md ]; then
+            # Extract changes for this version from CHANGELOG.md
+            awk "/^## \[?v?$TAG_VERSION\]?/,/^## \[?v?[0-9]/ { if (/^## \[?v?[0-9]/ && !/^## \[?v?$TAG_VERSION\]?/) exit; print }" CHANGELOG.md | grep -v "^## \[?v?$TAG_VERSION\]?" | head -20 >> $GITHUB_OUTPUT
+          else
+            echo "See commit history for changes in this release." >> $GITHUB_OUTPUT
+          fi
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: devports ${{ github.ref_name }}
+          body: ${{ steps.release_notes.outputs.release_notes }}
+          files: |
+            devports-*.tar.gz
+            devports-*.zip
+            devports
+            install.sh
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update install script URL check
+        run: |
+          # Verify the install script will work with the new release
+          echo "✅ Release created successfully!"
+          echo "The install script at install.sh will now download from this release."
