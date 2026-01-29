@@ -603,9 +603,9 @@ devports_main() {
         [[ "$show_extended" == "true" ]] && status_items+=("${GREEN}Extended${RESET}") || status_items+=("${DIM}Basic${RESET}")
         [[ "$auto_refresh" == "true" ]] && status_items+=("${BLUE}Auto${RESET}")
         
-        printf "%s" "${status_items[0]}"
+        printf "%b" "${status_items[0]}"
         for item in "${status_items[@]:1}"; do
-            printf " ${DIM}|${RESET} %s" "$item"
+            printf " ${DIM}|${RESET} %b" "$item"
         done
         echo
         echo
